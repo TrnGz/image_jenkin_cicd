@@ -4,7 +4,7 @@ pipeline {
     environment {
         AWS_REGION    = "ap-northeast-1"                  // Thay region của bạn
         ACCOUNT_ID    = "591313757404"                    // Thay bằng AWS Account ID của bạn
-        ECR_REPO      = "image_jenkin_cicd"                  // Tên ECR repository
+        ECR_REPO      = "backend-website"                  // Tên ECR repository
         IMAGE_TAG     = "${BUILD_NUMBER}"
         ECS_CLUSTER   = "website-pj"                  // Tên ECS Cluster
         ECS_SERVICE   = "web-01-service-kqv6l5zg"                  // Tên ECS Service
