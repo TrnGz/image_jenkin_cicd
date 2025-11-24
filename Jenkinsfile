@@ -1,63 +1,72 @@
+// ========== JENKINSFILE HOÀN CHỈNH – DOCKER → ECR ==========
 pipeline {
     agent any
 
+    // ---------------- THAY 4 DÒNG NÀY ----------------
     environment {
-        AWS_REGION    = "ap-northeast-1"
-        ACCOUNT_ID    = "591313757404"                   // ← sửa đúng Account ID của bạn
-        ECR_REPO      = "backend-website"                // ← tên ECR repo
-        IMAGE_TAG     = "${BUILD_NUMBER}"
-        ECS_CLUSTER   = "website-pj"
-        ECS_SERVICE   = "web-01-service-kqv6l5zg"        // ← tên service chính xác
+        // 1. Registry đầy đủ (copy từ ECR → View push commands)
+        ECR_REGISTRY = "591313757404.dkr.ecr.ap-northeast-1.amazonaws.com"   
+        
+        // 2. Tên repository bạn đã tạo trong ECR
+        ECR_REPO_NAME = "backend-website"                                      
+        
+        // 3. Region của bạn (ví dụ: ap-northeast-1, us-east-1, ap-southeast-1…)
+        AWS_REGION    = "ap-northeast-1"                                   
+        
+        // 4. ID credential AWS bạn đã tạo (bắt buộc đúng 100%)
+        AWS_CRED_ID   = "aws-jenkins-ecr"                                  
     }
+    // --------------------------------------------------
 
     stages {
-        // Bỏ stage Checkout Code riêng vì Pipeline script from SCM đã tự checkout rồi
-        // → để lại sẽ bị checkout 2 lần (nguyên nhân log bị lặp như bạn thấy)
+        stage('Checkout') {
+            steps {
+                checkout scm
+            }
+        }
 
         stage('Build Docker Image') {
             steps {
                 script {
-                    docker.build("${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPO}:${IMAGE_TAG}")
+                    // Tag theo commit SHA (rất sạch, dễ rollback)
+                    def imageTag = env.GIT_COMMIT
+                    dockerImage = docker.build("${ECR_REGISTRY}/${ECR_REPO_NAME}:${imageTag}")
                 }
             }
         }
 
-        stage('Push to ECR') {
+        stage('Push to Amazon ECR') {
             steps {
-                sh '''
-                    aws ecr get-login-password --region ${AWS_REGION} | \
-                    docker login --username AWS --password-stdin ${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com
-                    
-                    docker push ${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPO}:${IMAGE_TAG}
-                    docker push ${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPO}:latest
-                '''
+                script {
+                    // Cách hiện đại nhất 2025 – dùng plugin Amazon ECR (không cần docker login thủ công)
+                    docker.withRegistry("https://${ECR_REGISTRY}", "ecr:${AWS_REGION}:${AWS_CRED_ID}") {
+                        dockerImage.push()              // push theo commit SHA
+                        dockerImage.push('latest')      // push thêm tag latest cho tiện
+                    }
+                }
             }
         }
 
-        stage('Deploy to ECS') {
+        stage('Cleanup Local Images') {
             steps {
-                sh '''
-                    aws ecs update-service \
-                        --cluster ${ECS_CLUSTER} \
-                        --service ${ECS_SERVICE} \
-                        --force-new-deployment
-                '''
+                sh "docker rmi ${ECR_REGISTRY}/${ECR_REPO_NAME}:${env.GIT_COMMIT} || true"
+                sh "docker rmi ${ECR_REGISTRY}/${ECR_REPO_NAME}:latest || true"
             }
         }
     }
 
     post {
         always {
-            sh '''
-                docker rmi ${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPO}:${IMAGE_TAG} || true
-                docker rmi ${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPO}:latest || true
-            '''
+            cleanWs()   // dọn workspace, tiết kiệm ổ cứng
         }
         success {
-            echo "CI/CD THÀNH CÔNG 100%! Phiên bản ${IMAGE_TAG} đã được deploy lên ECS"
+            echo "✅ Đã push image thành công lên ECR!"
+            echo "Image: ${ECR_REGISTRY}/${ECR_REPO_NAME}:${env.GIT_COMMIT}"
+            echo "Latest: ${ECR_REGISTRY}/${ECR_REPO_NAME}:latest"
         }
         failure {
-            echo "CI/CD thất bại – kiểm tra log trên"
+            echo "❌ Build thất bại – kiểm tra log ngay!"
         }
     }
 }
+// =========================================================
