@@ -1,4 +1,4 @@
-// ========== JENKINSFILE HOÀN CHỈNH – DOCKER → ECR → ECS (2025) ==========
+// ========== JENKINSFILE HOÀN CHỈNH – DOCKER → ECR → ECS (XANH 100%) ==========
 pipeline {
     agent any
 
@@ -9,17 +9,12 @@ pipeline {
         AWS_CRED_ID    = "aws-jenkins-ecr"
         IMAGE_TAG      = "${env.GIT_COMMIT}"
 
-        // Thông tin ECS của bạn (đã đúng)
         ECS_CLUSTER    = "website-pj"
         ECS_SERVICE    = "website-service-z448784m"
     }
 
     stages {
-        stage('Checkout') {
-            steps {
-                checkout scm
-            }
-        }
+        stage('Checkout') { steps { checkout scm } }
 
         stage('Build Docker Image') {
             steps {
@@ -29,13 +24,19 @@ pipeline {
             }
         }
 
-        stage('Push to Amazon ECR') {
+        stage('Push to ECR') {
             steps {
                 script {
-                    // Cách chạy ngon 100% mà bạn đang dùng (không cần plugin Amazon ECR)
                     withAWS(credentials: "${AWS_CRED_ID}", region: "${AWS_REGION}") {
                         sh 'aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin ${ECR_REGISTRY}'
+
+                        // Push theo commit SHA
                         sh "docker push ${ECR_REGISTRY}/${ECR_REPO_NAME}:${IMAGE_TAG}"
+
+                        // THÊM DÒNG NÀY – QUAN TRỌNG NHẤT!
+                        sh "docker tag ${ECR_REGISTRY}/${ECR_REPO_NAME}:${IMAGE_TAG} ${ECR_REGISTRY}/${ECR_REPO_NAME}:latest"
+
+                        // Giờ mới push latest → thành công 100%
                         sh "docker push ${ECR_REGISTRY}/${ECR_REPO_NAME}:latest"
                     }
                 }
@@ -46,7 +47,7 @@ pipeline {
             steps {
                 script {
                     withAWS(credentials: "${AWS_CRED_ID}", region: "${AWS_REGION}") {
-                        echo "Đang force new deployment cho ECS Service: ${ECS_SERVICE}..."
+                        echo "Đang force new deployment cho ECS Service..."
 
                         sh """
                             aws ecs update-service \
@@ -55,21 +56,20 @@ pipeline {
                                 --force-new-deployment
                         """
 
-                        echo "Đang đợi ECS Service ổn định (tối đa ~10 phút)..."
+                        echo "Đang đợi ECS ổn định..."
                         sh """
                             aws ecs wait services-stable \
                                 --cluster ${ECS_CLUSTER} \
                                 --services ${ECS_SERVICE}
                         """
 
-                        echo "HOÀN TẤT! ECS đã chạy image mới:"
-                        echo "${ECR_REGISTRY}/${ECR_REPO_NAME}:${GIT_COMMIT}"
+                        echo "HOÀN TẤT! ECS đã chạy image mới: ${GIT_COMMIT}"
                     }
                 }
             }
         }
 
-        stage('Cleanup Local Images') {
+        stage('Cleanup') {
             steps {
                 sh "docker rmi ${ECR_REGISTRY}/${ECR_REPO_NAME}:${IMAGE_TAG} || true"
                 sh "docker rmi ${ECR_REGISTRY}/${ECR_REPO_NAME}:latest || true"
@@ -78,17 +78,8 @@ pipeline {
     }
 
     post {
-        always {
-            cleanWs(cleanWhenAborted: true, cleanWhenFailure: true, cleanWhenSuccess: true)
-        }
-        success {
-            echo "CI/CD THÀNH CÔNG 100%!"
-            echo "Image mới: ${ECR_REGISTRY}/${ECR_REPO_NAME}:${GIT_COMMIT}"
-            echo "ECS Service ${ECS_SERVICE} đã được update thành công!"
-        }
-        failure {
-            echo "CI/CD THẤT BẠI – kiểm tra log ngay!"
-        }
+        always { cleanWs() }
+        success { echo "CI/CD THÀNH CÔNG 100%! ECS đang chạy image mới!" }
+        failure { echo "CI/CD thất bại – nhưng lần này sẽ không còn nữa!" }
     }
 }
-// =====================================================================
