@@ -54,7 +54,35 @@ pipeline {
             }
         }
     }
-
+stage('Deploy to ECS') {
+            steps {
+                script {
+                    withAWS(credentials: "${AWS_CRED_ID}", region: "${AWS_REGION}") {
+                        echo "Đang force new deployment cho ECS Service..."
+                        
+                        // Force ECS Service chạy lại với image mới nhất
+                        sh """
+                        aws ecs update-service \
+                            --cluster website-pj \
+                            --service website-service-z448784m \
+                            --force-new-deployment \
+                            --region ${AWS_REGION}
+                        """
+                        
+                        // (Tùy chọn) Đợi ECS ổn định – cực kỳ hay
+                        sh """
+                        aws ecs wait services-stable \
+                            --cluster website-pj \
+                            --services website-service-z448784m \
+                            --region ${AWS_REGION}
+                        """
+                        
+                        echo "Deploy thành công! ECS đã chạy image mới:"
+                        echo "${ECR_REGISTRY}/${ECR_REPO_NAME}:${GIT_COMMIT}"
+                    }
+                }
+            }
+        }
     post {
         always {
             cleanWs()   // dọn workspace, tiết kiệm ổ cứng
