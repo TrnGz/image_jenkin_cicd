@@ -10,7 +10,7 @@ pipeline {
         IMAGE_TAG      = "${env.GIT_COMMIT}"
 
         ECS_CLUSTER    = "website-pj"
-        ECS_SERVICE    = "website-service-z448784m"
+        ECS_SERVICE    = "web01-service-74oquzqz"
     }
 
     stages {
